@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Unsealed">
+<meta name="theme-color" content="#0e1a21">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<title>Unsealed</title>
+<style>
+:root{--bg:#0e1a21;--panel:#162832;--line:#25404c;--text:#e8eff1;--dim:#8fa7b0;--bar:#04080a;--stamp:#f2b632;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.45 -apple-system,system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{padding:20px 16px 8px;display:flex;justify-content:space-between;align-items:flex-end}
+h1{font:700 30px/1 Georgia,serif;margin:0;letter-spacing:-.5px}
+#status{color:var(--dim);font-size:13px;margin-top:6px}
+button{font:inherit;color:inherit;background:none;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+button:focus-visible{outline:2px solid var(--stamp)}
+nav{display:flex;gap:8px;overflow-x:auto;padding:8px 16px 12px;position:sticky;top:0;background:var(--bg);z-index:2}
+nav button{white-space:nowrap}
+nav button.on{background:var(--stamp);color:#1a1300;border-color:var(--stamp)}
+main{padding:0 16px 40px;max-width:640px;margin:0 auto}
+.item{border-bottom:1px solid var(--line);padding:14px 0}
+.meta{font-size:13px;color:var(--dim);display:flex;gap:8px;align-items:center}
+.new{color:var(--stamp);border:1px solid var(--stamp);border-radius:4px;padding:0 5px;font-size:12px}
+.title{display:block;width:100%;text-align:left;border:0;padding:6px 0;font:600 18px/1.35 Georgia,serif}
+.title.sealed{background:linear-gradient(var(--bar),var(--bar)) no-repeat 0 50%/100% 1.1em;color:transparent;border-radius:3px;user-select:none}
+.title.sealed::after{content:"Tap to unseal";color:var(--dim);font:13px system-ui;position:relative}
+a.open{color:var(--stamp);font-size:14px;text-decoration:none}
+.empty{color:var(--dim);padding:40px 0;text-align:center}
+#refresh{background:var(--stamp);color:#1a1300;border-color:var(--stamp);font-weight:600;padding:10px 16px}
+#refresh.busy{opacity:.6}
+#q{display:flex;gap:8px;padding:0 16px 8px}
+#q input{flex:1;font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+#q input:focus-visible{outline:2px solid var(--stamp)}
+@media (prefers-reduced-motion:no-preference){.title{transition:color .25s}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Unsealed</h1><div id="status">Loading…</div></div>
+  <button id="refresh" aria-label="Refresh">Refresh</button>
+</header>
+<form id="q" onsubmit="return false"><input id="topic" type="search" placeholder="Search any topic, person or company" enterkeyhint="search"><button id="go">Search</button></form>
+<nav id="tabs"></nav>
+<main id="list"></main>
+<script>
+const FEEDS={
+  "All":null,
+  "Declassified":"declassified documents released",
+  "Leaks":"leaked documents reveal",
+  "Files released":"FOIA documents released reveal",
+  "Whistleblowers":"whistleblower reveals",
+  "Government":"secret government program revealed",
+  "Military & spies":"classified intelligence military revealed",
+  "Tech & AI":"leaked unreleased AI model OR leaked unreleased device",
+  "Business":"internal memo leaked company",
+  "Science & health":"secret research hidden study revealed",
+  "Money & crime":"leaked financial records investigation reveals"
+};
+const KEY=" (leaked OR secret OR classified OR declassified OR whistleblower OR revealed)";
+const gn=q=>"https://api.rss2json.com/v1/api.json?rss_url="+encodeURIComponent("https://news.google.com/rss/search?q="+encodeURIComponent(q)+"+when:7d&hl=en-US&gl=US&ceid=US:en");
+let topic="",items=[],tab="All",seen=new Set();
+try{seen=new Set(JSON.parse(localStorage.getItem("seen")||"[]"))}catch(e){}
+const $=id=>document.getElementById(id);
+
+function tabs(){
+  $("tabs").innerHTML="";
+  Object.keys(FEEDS).forEach(k=>{
+    const b=document.createElement("button");b.textContent=k;
+    if(k===tab)b.className="on";
+    b.onclick=()=>{tab=k;tabs();render()};
+    $("tabs").appendChild(b);
+  });
+}
+function ago(d){
+  const m=Math.round((Date.now()-d)/60000);
+  if(m<60)return Math.max(m,1)+" min ago";
+  if(m<1440)return Math.round(m/60)+" h ago";
+  return Math.round(m/1440)+" d ago";
+}
+function render(){
+  const list=items.filter(i=>tab==="All"||i.cat===tab||topic);
+  const el=$("list");el.innerHTML="";
+  if(!list.length){el.innerHTML='<div class="empty">Nothing new in this category. Tap Refresh to check again.</div>';return}
+  list.forEach(i=>{
+    const d=document.createElement("div");d.className="item";
+    const m=document.createElement("div");m.className="meta";
+    if(!seen.has(i.link)){const n=document.createElement("span");n.className="new";n.textContent="New";m.appendChild(n)}
+    m.append(i.cat+" · "+i.src+" · "+ago(i.date));
+    const t=document.createElement("button");t.className="title sealed";t.textContent=i.title;
+    t.onclick=()=>{t.classList.remove("sealed");t.style.background="none";t.style.color="var(--text)";
+      t.insertAdjacentHTML("afterend",'<a class="open" target="_blank" rel="noopener" href="'+i.link+'">Read the source</a>');
+      t.onclick=null;seen.add(i.link);localStorage.setItem("seen",JSON.stringify([...seen]))};
+    d.append(m,t);el.appendChild(d);
+  });
+}
+async function load(){
+  $("status").textContent="Checking sources…";
+  const btn=$("refresh");btn.classList.add("busy");btn.textContent="Refreshing…";
+  const cats=topic?["Search"]:Object.keys(FEEDS).filter(k=>FEEDS[k]);
+  const res=await Promise.allSettled(cats.map(c=>fetch(gn(topic?topic+KEY:FEEDS[c])).then(r=>r.json()).then(j=>(j.items||[]).map(x=>{
+    const p=x.title.lastIndexOf(" - ");
+    return{cat:c,title:p>0?x.title.slice(0,p):x.title,src:p>0?x.title.slice(p+3):"News",link:x.link,date:new Date(x.pubDate.replace(" ","T")+"Z")}
+  }))));
+  const map=new Map();
+  res.forEach(r=>{if(r.status==="fulfilled")r.value.forEach(i=>{if(!map.has(i.link))map.set(i.link,i)})});
+  items=[...map.values()].sort((a,b)=>b.date-a.date);
+  const fresh=items.filter(i=>!seen.has(i.link)).length;
+  btn.classList.remove("busy");btn.textContent="Refresh";
+  $("status").textContent=(topic?"“"+topic+"” · ":"")+(items.length?fresh+" new · updated "+new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"No results or no connection.");
+  render();
+}
+$("refresh").onclick=load;
+function search(){topic=$("topic").value.trim();tab="All";tabs();load()}
+$("go").onclick=search;
+$("topic").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();search();$("topic").blur()}});
+$("topic").addEventListener("input",e=>{if(!e.target.value&&topic){topic="";load()}});
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+tabs();load();
+</script>
+</body>
+</html>
